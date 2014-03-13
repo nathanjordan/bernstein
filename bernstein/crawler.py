@@ -4,6 +4,7 @@ from scrapy import log, signals
 from scrapy.utils.project import get_project_settings
 from scrapy.http import Request
 import urlparse
+import csv
 
 from scrapy.item import Item
 from scrapy.item import Field
@@ -14,7 +15,17 @@ from scrapy.selector import Selector
 
 import database
 
-urls = ["http://www.cnn.com/"]
+urls = []
+domains = []
+
+# Read the .csv
+with open('sites.csv', 'r') as csvfile:
+    url_reader = csv.reader(csvfile)
+    # For each row, add the url and get the domain
+    for row in url_reader:
+        urls.append(row)
+        o = urlparse.urlparse(row[3])
+        domains.append(o.netloc)
 
 
 class Link(Item):
@@ -25,15 +36,16 @@ class Link(Item):
 
 class TestSpider(Spider):
 
-    name = "test_spider"
-    allowed_domains = ["cnn.com"]
-    start_urls = urls
+    name = "bernstein_spider"
+    allowed_domains = domains
+    start_urls = [x[3] for x in urls]
 
     def parse(self, response):
         sel = Selector(response)
         # for each anchor that has a href attribute
         for url in sel.css("a::attr(href)").extract():
             # parse the url
+            # TODO Might need to change something for absolute urls here
             abs_url = urlparse.urljoin(response.url, url.strip())
             o = urlparse.urlparse(abs_url)
             # strip the queries
@@ -67,7 +79,7 @@ class TestSpider(Spider):
 if __name__ == "__main__":
     # create initial nodes
     for url in urls:
-        database.create_initial_node(url)
+        database.create_initial_node(url[3])
     # create a new spider
     spider = TestSpider()
     # set the crawler settings
