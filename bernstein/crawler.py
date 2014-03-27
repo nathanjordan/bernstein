@@ -83,8 +83,13 @@ if __name__ == "__main__":
     # create a new spider
     spider = TestSpider()
     # set the crawler settings
-    settings = get_project_settings()
-    crawler = Crawler(settings)
+    proj_settings = get_project_settings()
+    crawler = Crawler(proj_settings)
+    # Set custom crawler settings
+    crawler.settings.overrides['DEPTH_LIMIT'] = 6
+    crawler.settings.overrides['CONCURRENT_REQUESTS'] = 32
+    crawler.settings.overrides['DOWNLOAD_DELAY'] = 0.1
+    print crawler.settings.__dict__
     # tell twisted we want to stop when the spider is done
     crawler.signals.connect(reactor.stop, signal=signals.spider_closed)
     # configure and set which spider the crawler is using
