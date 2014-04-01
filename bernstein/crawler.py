@@ -4,6 +4,7 @@ from scrapy import log, signals
 from scrapy.utils.project import get_project_settings
 from scrapy.http import Request
 import urlparse
+from tld import get_tld
 import csv
 
 from scrapy.item import Item
@@ -16,16 +17,21 @@ from scrapy.selector import Selector
 import database
 
 urls = []
-domains = []
+domains = {}
+disallowed_filetypes = ['.jpg', '.gif', '.png', '.svg', '.tiff', '.pdf']
+
+
+def is_absolute(url):
+    return bool(urlparse.urlparse(url).netloc)
+
 
 # Read the .csv
-with open('sites.csv', 'r') as csvfile:
+with open('sites_minus_facebook.csv', 'r') as csvfile:
     url_reader = csv.reader(csvfile)
     # For each row, add the url and get the domain
     for row in url_reader:
         urls.append(row)
-        o = urlparse.urlparse(row[3])
-        domains.append(o.netloc)
+        domains[get_tld(row[3])] = True
 
 
 class Link(Item):
@@ -44,29 +50,30 @@ class TestSpider(Spider):
         sel = Selector(response)
         # for each anchor that has a href attribute
         for url in sel.css("a::attr(href)").extract():
+            # if the url is relative, make it absolute
+            if not is_absolute(url):
+                url = urlparse.urljoin(response.url, url.strip())
             # parse the url
-            # TODO Might need to change something for absolute urls here
-            abs_url = urlparse.urljoin(response.url, url.strip())
-            o = urlparse.urlparse(abs_url)
+            o = urlparse.urlparse(url)
             # strip the queries
             queryless_url = o.scheme + "://" + o.netloc + o.path
-            # get the domain info to check if we're crawling something we don't
-            # need
-            netloc = o.netloc.lower()
             # normalize the url
             queryless_url = queryless_url.lower()
-            # make sure its not a javascript link?
-            if 'javascript' in queryless_url:
-                continue
+            #get the tld
+            url_tld = get_tld(queryless_url, fail_silently=True)
             # check to see if its in the allowed domains before we add it
-            allowed = False
-            for domain in self.allowed_domains:
-                # if the domain is in the netloc, we can add it
-                if domain in netloc:
-                    allowed = True
+            if url_tld not in domains:
+                continue
+            # make sure its not a javascript link?
+            #if 'javascript' in queryless_url:
+            #    continue
+            # make sure the filetype is right
+            filetype_allowed = True
+            for filetype in disallowed_filetypes:
+                if filetype in queryless_url:
+                    filetype_allowed = False
                     break
-            # otherwise move on to the next link
-            if not allowed:
+            if not filetype_allowed:
                 continue
             # add it to the database
             database.map_link(self,
@@ -79,17 +86,16 @@ class TestSpider(Spider):
 if __name__ == "__main__":
     # create initial nodes
     for url in urls:
-        database.create_initial_node(url[3])
+        database.create_initial_node(url[3].lower())
     # create a new spider
     spider = TestSpider()
     # set the crawler settings
     proj_settings = get_project_settings()
     crawler = Crawler(proj_settings)
     # Set custom crawler settings
-    crawler.settings.overrides['DEPTH_LIMIT'] = 6
+    crawler.settings.overrides['DEPTH_LIMIT'] = 7
     crawler.settings.overrides['CONCURRENT_REQUESTS'] = 32
     crawler.settings.overrides['DOWNLOAD_DELAY'] = 0.1
-    print crawler.settings.__dict__
     # tell twisted we want to stop when the spider is done
     crawler.signals.connect(reactor.stop, signal=signals.spider_closed)
     # configure and set which spider the crawler is using
