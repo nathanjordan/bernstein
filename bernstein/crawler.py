@@ -6,6 +6,7 @@ from scrapy.http import Request
 import urlparse
 from tld import get_tld
 import csv
+import nltk
 
 from scrapy.item import Item
 from scrapy.item import Field
@@ -48,6 +49,11 @@ class TestSpider(Spider):
 
     def parse(self, response):
         sel = Selector(response)
+        # get the paragraph tags and tokenize them
+        word_list = []
+        for paragraph in sel.css("p::text").extract():
+            word_list += nltk.word_tokenize(paragraph)
+        database.add_corpus(self, response.request.url.lower(), word_list)
         # for each anchor that has a href attribute
         for url in sel.css("a::attr(href)").extract():
             # if the url is relative, make it absolute
@@ -76,9 +82,7 @@ class TestSpider(Spider):
             if not filetype_allowed:
                 continue
             # add it to the database
-            database.map_link(self,
-                              response.request.url.lower(),
-                              queryless_url)
+            database.map_link(self, response.request.url.lower(), queryless_url)
             # crawl the resulting link
             yield Request(queryless_url, callback=self.parse)
 
@@ -93,7 +97,7 @@ if __name__ == "__main__":
     proj_settings = get_project_settings()
     crawler = Crawler(proj_settings)
     # Set custom crawler settings
-    crawler.settings.overrides['DEPTH_LIMIT'] = 7
+    crawler.settings.overrides['DEPTH_LIMIT'] = 5
     crawler.settings.overrides['CONCURRENT_REQUESTS'] = 32
     crawler.settings.overrides['DOWNLOAD_DELAY'] = 0.1
     # tell twisted we want to stop when the spider is done

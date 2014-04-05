@@ -1,4 +1,5 @@
 from py2neo import neo4j
+from scrapy import log
 
 # connect to the db
 db = neo4j.GraphDatabaseService("http://localhost:7474/db/data/")
@@ -33,6 +34,12 @@ def map_link(spider, url_referrer, url_destination):
                                                      destination_props)
     # get the node that referred to this one (it should definitely exist)
     referrer_node = db.get_indexed_node("url_index", "url", url_referrer)
+    # if the referrer node doesn't exist, we were probably 302ed
+    # TODO is this the best option?
+    if not referrer_node:
+        spider.log("Couldn't add corpus to referenced URL " + url_referrer,
+                   level=log.WARNING)
+        return
     # get links between these pages
     links = destination_node.match_incoming(start_node=referrer_node,
                                             rel_type="LINKS_TO")
@@ -40,3 +47,13 @@ def map_link(spider, url_referrer, url_destination):
     # if theres not already a link, create one
     if not len(link_list):
         referrer_node.create_path("LINKS_TO", destination_node)
+
+
+def add_corpus(spider, url_referrer, word_list):
+    referrer_node = db.get_indexed_node("url_index", "url", url_referrer)
+    # TODO is this the best option?
+    if not referrer_node:
+        spider.log("Couldn't add corpus to referenced URL " + url_referrer,
+                   level=log.WARNING)
+        return
+    referrer_node.update_properties({'word_list': word_list})
